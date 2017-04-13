@@ -7,7 +7,7 @@ real(8), dimension(2), parameter:: uno=(/ 1.0D+00, 1.0D+00 /)
 contains
 !=======================================================================
 !initially wanted to solve the equation on radial function R(r)
-!where full wave function = r * R(r) * Y_lm
+!where full wave function = R(r)/r * Y_lm
 subroutine equations ( r, n, u, uprime )
 ! this subroutine evaluates the derivative uprime(n) given the time r and
 !    solution vector u(n)
