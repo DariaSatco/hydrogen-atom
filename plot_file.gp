@@ -1,5 +1,4 @@
-set terminal wxt
-set output 'wavefunc0.png'
+set terminal qt
 set autoscale 
 set xtic auto                      
 set ytic auto

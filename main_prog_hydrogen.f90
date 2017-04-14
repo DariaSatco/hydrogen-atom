@@ -4,7 +4,7 @@ use equation_module
 implicit none
 real(8) :: ri, rf, dr, dE
 real(8), allocatable :: wave_func_vec(:,:), coordinates(:)
-integer :: N
+integer :: N, Nr
 integer :: i,k,j
 integer :: controller
 real(8) :: closeness, closeness_mem
@@ -17,17 +17,20 @@ read*, z
 print*, 'Enter the orbital quantum number l = '
 read*, l
 
-print*, 'Enter the start point for energy '
-read*, energy
+print*, 'Enter the main quantum number '
+read *, Nr
+!read*, energy
+
+energy = -real(Z)**2
 
 if (energy .ge. 0.0D+00) then
-    print*, 'the energy need to be negative, type another number '
+    print*, 'the energy needs to be negative, type another number '
     read*, energy
 endif
 
 100 format(3(A15))
 150 format(2(A15,f10.3))
-200 format(3(e15.3))
+200 format(6(e15.3))
 
 open(unit=18, file='hydrogen_wavefunc.txt', status='replace')
 !hydrogen_wavefunc.txt - file with radius, function and dericative values
@@ -39,9 +42,9 @@ write(19,100) 'energy', 'closeness'
 !initialize cicle counter
 controller=0
 
-dE = abs(energy/1000)
+dE = abs(energy/500)
 !initialize a big parameter to provoke the next step in the cicle
-closeness_mem = 10000.0_8
+closeness_mem = 10000.0D+00
 
 do
 !do cicle - is looking for necessary energy value
@@ -110,35 +113,41 @@ coordinates(k+1)=ri
 coordinates(2*N-k+1)=rf
 
 end do
-
+!print*, ri, rf
 if ( abs( ri - rf ) .ge. 1.0e-3*dr ) then
     print*, ri, rf
     print*, 'Finish is not in central point!!!'
 endif
 
-wave_func_vec(1:N+1, 1:2) = wave_func_vec(1:N+1, 1:2) * u2(1)/u1(1)
-
+wave_func_vec(N+1:2*N+1, 1:2) = wave_func_vec(N+1:2*N+1, 1:2) /u2(1)
+wave_func_vec(1:N, 1:2) = wave_func_vec(1:N, 1:2) / u1(1)
 !we need to scale one of the functions (right or left)
 !because initial values are correct except for random constant factor
-u1 = u1 * u2(1)/u1(1)
-
+u2 = u2 / u2(1)
+u1 = u1 / u1(1)
 !measure of how close the functions are
 !Has to be relative, since the more the n (main quantum number) of the radial function is,
 !the smaller it is.
-closeness = abs( u1(2)- u2(2) ) / max( abs(u1(2)), abs(u2(2)) )
 
+!closeness = ( u1(2)- u2(2) ) / max( abs(u1(2)), abs(u2(2)) )
+!closeness = (u1(2) - u2(2)) / max( abs(u1(2)), abs(u2(2)) )
+closeness = u1(2) - u2(2)
 !derivatives equality condition
-if ( closeness .le. 1.0e-2 ) then
+
+if ( abs(closeness) .le. 1.0e-2 ) then
     exit
-elseif ( closeness / closeness_mem .ge. 1.01D+00 ) then
+elseif ( (closeness * closeness_mem) .le. 0.0D+00 ) then
     dE = - dE/2
     print * , "reverse, E= ", energy, " now dE=", dE, " closeness=", closeness, "n=", sqrt(-Z**2/(2*energy))
-endif
+    !exit
+end if
 
-write(19,200) energy, closeness
+write(19,200) energy, closeness, u1(2), u2(2)
 
 energy = energy + dE
-
+!if ((closeness - closeness_mem)/max(abs(closeness),abs(closeness_mem)) > 0.1D+00) then
+!    exit
+!end if
 closeness_mem = closeness
 
 !put the condition to avoid infinite looping
