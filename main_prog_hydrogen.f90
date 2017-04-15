@@ -2,11 +2,11 @@ program main_prog_hydrogen
 use equation_module
 
 implicit none
-real(8) :: ri, rf, dr, dE, dEMax
+real(8) :: ri, rf, dr, dE, dEMax, energyMax, energyStepCoeff
 real(8), allocatable :: wave_func_vec(:,:), coordinates(:)
 integer :: N, Nr
 integer :: i,k,j
-integer :: controller
+integer :: controller, noChanges
 real(8) :: closeness, closeness_mem
 real(8) :: u1_0(2), u2_0(2)
 real(8) :: u1(2), u2(2)
@@ -20,7 +20,8 @@ read*, l
 print*, 'Enter the main quantum number '
 read *, Nr
 
-energy = -real(Z)**2*1.17
+energyMax = -real(Z)**2*1.17
+energy = energyMax
 
 if (energy .ge. 0.0D+00) then
     print*, 'the energy needs to be negative, type another number '
@@ -56,7 +57,7 @@ controller=controller+1
   rf = log(1.0D-04)/(-sqrt(-2*energy))
 
   do
-    if ((rf**(l) * exp(-sqrt(-2*energy)*rf)) .le. 1.0D-04) then
+    if ((rf**(l/2) * exp(-sqrt(-2*energy)*rf)) .le. 1.0D-04) then
     !if ((rf**l * exp(-sqrt(-2*energy) * rf))<= 1.0e-3) then
         exit
     else
@@ -143,18 +144,26 @@ u1 = u1 / u1(1)
 !closeness = (u1(2) - u2(2)) / max( abs(u1(2)), abs(u2(2)) )
 closeness = abs(u1(2) - u2(2))/max(abs(u1(2)),abs(u2(2)))
 !derivatives equality condition
-
+energyStepCoeff = (energy/energyMax) ** (0.1)
 if ( abs(closeness) .le. 1.0e-2 ) then
     exit
-elseif (((closeness - closeness_mem)*dEMax/(abs(dE))) .ge. 0.1D-01 ) then
+elseif (((closeness - closeness_mem)*dEMax/(abs(dE * energyStepCoeff))) .ge. 0.2D+00 ) then
     dE = - dE/2
     print * , "reverse, E= ", energy, " now dE=", dE, " closeness=", closeness, "n=", sqrt(-Z**2/(2*energy))
+    noChanges = 0
     !exit
+end if
+
+if (noChanges > 9) then
+    if (dE< dEMax) then
+        dE = dE * 2
+        noChanges = 0
+    end if
 end if
 
 write(19,200) energy, closeness, u1(2), u2(2)
 
-energy = energy + dE
+energy = energy + dE*energyStepCoeff
 if (energy >= 0) then
     print *, "Bad energy"
     exit
