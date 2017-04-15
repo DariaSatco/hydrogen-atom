@@ -2,7 +2,7 @@ program main_prog_hydrogen
 use equation_module
 
 implicit none
-real(8) :: ri, rf, dr, dE
+real(8) :: ri, rf, dr, dE, dEMax
 real(8), allocatable :: wave_func_vec(:,:), coordinates(:)
 integer :: N, Nr
 integer :: i,k,j
@@ -19,9 +19,8 @@ read*, l
 
 print*, 'Enter the main quantum number '
 read *, Nr
-!read*, energy
 
-energy = -real(Z)**2
+energy = -real(Z)**2*1.17
 
 if (energy .ge. 0.0D+00) then
     print*, 'the energy needs to be negative, type another number '
@@ -29,8 +28,8 @@ if (energy .ge. 0.0D+00) then
 endif
 
 100 format(3(A15))
-150 format(2(A15,f10.3))
-200 format(6(e15.3))
+150 format(2(A15,f17.7))
+200 format(6(e17.7))
 
 open(unit=18, file='hydrogen_wavefunc.txt', status='replace')
 !hydrogen_wavefunc.txt - file with radius, function and dericative values
@@ -42,7 +41,8 @@ write(19,100) 'energy', 'closeness'
 !initialize cicle counter
 controller=0
 
-dE = abs(energy/500)
+dEMax = abs(energy/500)
+dE = dEMax
 !initialize a big parameter to provoke the next step in the cicle
 closeness_mem = 10000.0D+00
 
@@ -51,10 +51,20 @@ do
 !also is calculating wave function
 !control the number of cicle steps
 controller=controller+1
-
   ri = 1.0e-8
   !left start point
-  rf = log(1.0e-8)/(-sqrt(-2*energy))
+  rf = log(1.0D-04)/(-sqrt(-2*energy))
+
+  do
+    if ((rf**(l) * exp(-sqrt(-2*energy)*rf)) .le. 1.0D-04) then
+    !if ((rf**l * exp(-sqrt(-2*energy) * rf))<= 1.0e-3) then
+        exit
+    else
+        rf = rf*1.2D+00
+        print *, rf
+    end if
+  end do
+
   !right start point (finish for the wave function)
 
 u1_0 = (/ 0.0D+00, 1.0D+00 /)
@@ -131,12 +141,12 @@ u1 = u1 / u1(1)
 
 !closeness = ( u1(2)- u2(2) ) / max( abs(u1(2)), abs(u2(2)) )
 !closeness = (u1(2) - u2(2)) / max( abs(u1(2)), abs(u2(2)) )
-closeness = u1(2) - u2(2)
+closeness = abs(u1(2) - u2(2))/max(abs(u1(2)),abs(u2(2)))
 !derivatives equality condition
 
 if ( abs(closeness) .le. 1.0e-2 ) then
     exit
-elseif ( (closeness * closeness_mem) .le. 0.0D+00 ) then
+elseif (((closeness - closeness_mem)*dEMax/(abs(dE))) .ge. 0.1D-01 ) then
     dE = - dE/2
     print * , "reverse, E= ", energy, " now dE=", dE, " closeness=", closeness, "n=", sqrt(-Z**2/(2*energy))
     !exit
@@ -145,13 +155,17 @@ end if
 write(19,200) energy, closeness, u1(2), u2(2)
 
 energy = energy + dE
+if (energy >= 0) then
+    print *, "Bad energy"
+    exit
+  end if
 !if ((closeness - closeness_mem)/max(abs(closeness),abs(closeness_mem)) > 0.1D+00) then
 !    exit
 !end if
 closeness_mem = closeness
 
 !put the condition to avoid infinite looping
-if (controller .ge. 1e4) then
+if (controller .ge. 3e3) then
     print*, 'Can not find the necessary energy point for l = ', l
     exit
 endif
