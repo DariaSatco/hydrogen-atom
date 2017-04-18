@@ -8,8 +8,11 @@ integer :: N, Nr
 integer :: i,k,j
 integer :: controller, noChanges
 real(8) :: closeness, closeness_mem
+real(8) :: func_memL, func_memR
+integer :: roots
 real(8) :: u1_0(2), u2_0(2)
 real(8) :: u1(2), u2(2)
+character::rubbish
 
 print*, 'Enter the nuclear charge Z = '
 read*, z
@@ -19,6 +22,10 @@ read*, l
 
 print*, 'Enter the main quantum number '
 read *, Nr
+
+if (Nr <= l) then
+    print *, "Invalid Nr! It must be greater than l."
+end if
 
 energyMax = -real(Z)**2*1.17
 energy = energyMax
@@ -90,6 +97,11 @@ allocate( coordinates(2*N+1) )
 wave_func_vec(1, 1) = u1_0(1) * ri**l
 wave_func_vec(1, 2) = u1_0(2) * ri**l + l* ri**(l-1) * u1_0(1)
 
+func_memL = 0.0D+00
+func_memR = 0.0D+00
+
+roots = 0
+
 wave_func_vec(2*N+1, 1) = u2_0(1) * exp( - sqrt( -2 * energy)*rf )
 wave_func_vec(2*N+1, 2) = u2_0(2) * exp( - sqrt( -2 * energy)*rf ) + &
 ( - sqrt( -2 * energy) ) *exp(- sqrt( -2 * energy)*rf ) *u2_0(1)
@@ -109,6 +121,17 @@ rf=rf-dr
 
 u1_0 = u1
 u2_0 = u2
+
+if (func_memL * u1(1) < 0) then
+    roots = roots + 1
+end if
+if (func_memR * u2(1) < 0) then
+    roots = roots + 1
+end if
+
+
+func_memL = u1(1)
+func_memR = u2(1)
 
 u1(2) = u1(2) * ri**l + l* ri**(l-1) * u1(1)
 u1(1) = u1(1) * ri**l
@@ -143,11 +166,28 @@ u1 = u1 / u1(1)
 !closeness = ( u1(2)- u2(2) ) / max( abs(u1(2)), abs(u2(2)) )
 !closeness = (u1(2) - u2(2)) / max( abs(u1(2)), abs(u2(2)) )
 closeness = abs(u1(2) - u2(2))/max(abs(u1(2)),abs(u2(2)))
+if (abs(closeness_mem) > 0.9D+04) then
+    closeness_mem = closeness
+    print *, "null closeness"
+end if
 !derivatives equality condition
 energyStepCoeff = (energy/energyMax) ** (0.1)
 if ( abs(closeness) .le. 1.0e-2 ) then
-    exit
-elseif (((closeness - closeness_mem)*dEMax/(abs(dE * energyStepCoeff))) .ge. 0.2D+00 ) then
+    print *, "Found state l=",l," N=", sqrt(-Z**2/(2*energy))," roots=",roots," energy steps=",controller
+    if (roots == (Nr - l - 1)) then
+        exit
+    else
+        print *,"Not the needed state, print something to continue or END to finish and write to file"
+        read *, rubbish
+        if (rubbish == "E") then
+            exit
+        end if
+        dE = sign(dEMax, real(-roots + (Nr - l - 1),8))
+        energy = energy + 50*dE
+        closeness_mem = 1.0D+04
+        controller = 0
+    end if
+elseif ((((closeness - closeness_mem)*dEMax/(abs(dE * energyStepCoeff))) .ge. 0.2D+00 ).and.( abs(closeness_mem) < 0.9D+03 )) then
     dE = - dE/2
     print * , "reverse, E= ", energy, " now dE=", dE, " closeness=", closeness, "n=", sqrt(-Z**2/(2*energy))
     noChanges = 0
@@ -155,13 +195,13 @@ elseif (((closeness - closeness_mem)*dEMax/(abs(dE * energyStepCoeff))) .ge. 0.2
 end if
 
 if (noChanges > 9) then
-    if (dE< dEMax) then
+    if (abs(dE)< abs(dEMax)) then
         dE = dE * 2
         noChanges = 0
     end if
 end if
 
-write(19,200) energy, closeness, u1(2), u2(2)
+write(19,200) energy, closeness, u1(2), u2(2), real(roots,8)
 
 energy = energy + dE*energyStepCoeff
 if (energy >= 0) then
