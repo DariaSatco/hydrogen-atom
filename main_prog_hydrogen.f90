@@ -2,11 +2,11 @@ program main_prog_hydrogen
 use equation_module
 
 implicit none
-real(8) :: ri, rf, dr, dE, dEMax, energyMax, energyStepCoeff
+real(8) :: ri, rf,rfl, dr, error, dE, dEMax, energyMax, energyStepCoeff
 real(8), allocatable :: wave_func_vec(:,:), coordinates(:)
-integer :: N, Nr
+integer :: N1, N2, Nr
 integer :: i,k,j
-integer :: controller, noChanges
+integer :: controller, noChanges, rootsNeeded
 real(8) :: closeness, closeness_mem
 real(8) :: func_memL, func_memR
 integer :: roots
@@ -23,11 +23,13 @@ read*, l
 print*, 'Enter the main quantum number '
 read *, Nr
 
+error = 1.0D-04
+
 if (Nr <= l) then
     print *, "Invalid Nr! It must be greater than l."
 end if
 
-energyMax = -real(Z)**2*1.17
+energyMax = -real(Z)**2*0.57
 energy = energyMax
 
 if (energy .ge. 0.0D+00) then
@@ -49,8 +51,11 @@ write(19,100) 'energy', 'closeness'
 !initialize cicle counter
 controller=0
 
-dEMax = abs(energy/500)
+dEMax = abs(energy/100)
 dE = dEMax
+
+rootsNeeded = (Nr - l - 1)
+
 !initialize a big parameter to provoke the next step in the cicle
 closeness_mem = 10000.0D+00
 
@@ -61,17 +66,10 @@ do
 controller=controller+1
   ri = 1.0e-8
   !left start point
-  rf = log(1.0D-04)/(-sqrt(-2*energy))
+  rfl = abs(energy/Z)
+  rf = abs(log(1.0e-8))/(sqrt(-2*energy))
 
-  do
-    if ((rf**(l/2) * exp(-sqrt(-2*energy)*rf)) .le. 1.0D-04) then
-    !if ((rf**l * exp(-sqrt(-2*energy) * rf))<= 1.0e-3) then
-        exit
-    else
-        rf = rf*1.2D+00
-        print *, rf
-    end if
-  end do
+  rf = rfl + rf
 
   !right start point (finish for the wave function)
 
@@ -82,16 +80,18 @@ u2_0 = (/ 1.0D+00, 0.0D+00 /)
 !u2_0 - initial values for g and g' if R = exp( - sqrt( -2*energy ) ) * g(r)
 !u2 - (g, g')
 
-N = int( ( rf - ri )/5.0e-2 )*2
+dr=1.0e-3
+N1 = int( ( rfl - ri )/dr )
+N2 = int( (rf - rfl)/dr )
 !2*N - number of small intervals on [ri,rf]
 
-dr = ( rf - ri )/( 2*N )
+dr = ( rf - ri )/( (N1+N2) )
 !step size
 !print*, 'dr = ', dr
 
-allocate( wave_func_vec(2*N+1,2) )
+allocate( wave_func_vec(N1+N2+1,2) )
 !wave_func_vec - matrix, where we save wave function and its derivative values
-allocate( coordinates(2*N+1) )
+allocate( coordinates(N1+N2+1) )
 !coordunates - vector, where we save the radius points
 
 wave_func_vec(1, 1) = u1_0(1) * ri**l
@@ -102,59 +102,60 @@ func_memR = 0.0D+00
 
 roots = 0
 
-wave_func_vec(2*N+1, 1) = u2_0(1) * exp( - sqrt( -2 * energy)*rf )
-wave_func_vec(2*N+1, 2) = u2_0(2) * exp( - sqrt( -2 * energy)*rf ) + &
+wave_func_vec(N1+N2+1, 1) = u2_0(1) * exp( - sqrt( -2 * energy)*rf )
+wave_func_vec(N1+N2+1, 2) = u2_0(2) * exp( - sqrt( -2 * energy)*rf ) + &
 ( - sqrt( -2 * energy) ) *exp(- sqrt( -2 * energy)*rf ) *u2_0(1)
 
 coordinates(1)=ri
-coordinates(2*N+1)=rf
+coordinates(N1+N2+1)=rf
 
-do k=1,N
+do k=1,N1
+    call rk4vec( ri, 2, u1_0, dr, eq_modern1, u1 )
+    !runge-kutta for left part of wave function
+    ri=ri+dr
+    u1_0 = u1
+    if (func_memL * u1(1) < 0) then
+        roots = roots + 1
+    end if
+    func_memL = u1(1)
 
-call rk4vec( ri, 2, u1_0, dr, eq_modern1, u1 )
-!runge-kutta for left part of wave function
-call rk4vec( rf, 2, u2_0, -dr, eq_modern2, u2 )
-!runge-kutta for right part of wave function
+    u1(2) = u1(2) * ri**l + l* ri**(l-1) * u1(1)
+    u1(1) = u1(1) * ri**l
 
-ri=ri+dr
-rf=rf-dr
-
-u1_0 = u1
-u2_0 = u2
-
-if (func_memL * u1(1) < 0) then
-    roots = roots + 1
-end if
-if (func_memR * u2(1) < 0) then
-    roots = roots + 1
-end if
-
-
-func_memL = u1(1)
-func_memR = u2(1)
-
-u1(2) = u1(2) * ri**l + l* ri**(l-1) * u1(1)
-u1(1) = u1(1) * ri**l
-
-wave_func_vec(k+1, 1:2) =   u1
-
-u2(2) = u2(2) * exp(- sqrt( -2 * energy)*rf ) + ( - sqrt( -2 * energy) ) *exp(- sqrt( -2 * energy)*rf ) * u2(1)
-u2(1) = u2(1) * exp(- sqrt( -2 * energy)*rf )
-
-wave_func_vec(2*N-k+1, 1:2) = u2
-
-coordinates(k+1)=ri
-coordinates(2*N-k+1)=rf
-
+    wave_func_vec(k+1, 1:2) =   u1
+    coordinates(k+1)=ri
 end do
+
+
+do k=1,N2
+    call rk4vec( rf, 2, u2_0, -dr, eq_modern2, u2 )
+    !runge-kutta for right part of wave function
+    rf=rf-dr
+    u2_0 = u2
+
+    if (func_memR * u2(1) < 0) then
+        roots = roots + 1
+    end if
+    func_memR = u2(1)
+
+    u2(2) = u2(2) * exp(- sqrt( -2 * energy)*rf ) + ( - sqrt( -2 * energy) ) *exp(- sqrt( -2 * energy)*rf ) * u2(1)
+    u2(1) = u2(1) * exp(- sqrt( -2 * energy)*rf )
+
+    wave_func_vec(N1+N2-k+1, 1:2) = u2
+    coordinates(N1+N2-k+1)=rf
+end do
+
 !print*, ri, rf
 if ( abs( ri - rf ) .ge. 1.0e-3*dr ) then
     print*, ri, rf
     print*, 'Finish is not in central point!!!'
 endif
 
-wave_func_vec(N+1:2*N+1, 1:2) = wave_func_vec(N+1:2*N+1, 1:2) /u2(1)
-wave_func_vec(1:N, 1:2) = wave_func_vec(1:N, 1:2) / u1(1)
+print *, "energy=",energy," step=",dE*energyStepCoeff
+!print *, "rf=",rf," energy/Z=",abs(energy/Z), "diff=",rf-abs(energy/Z)
+
+wave_func_vec(N1+1:N1+N2+1, 1:2) = wave_func_vec(N1+1:N1+N2+1, 1:2) /u2(1)
+wave_func_vec(1:N1, 1:2) = wave_func_vec(1:N1, 1:2) / u1(1)
 !we need to scale one of the functions (right or left)
 !because initial values are correct except for random constant factor
 u2 = u2 / u2(1)
@@ -162,48 +163,33 @@ u1 = u1 / u1(1)
 !measure of how close the functions are
 !Has to be relative, since the more the n (main quantum number) of the radial function is,
 !the smaller it is.
+closeness = u1(2) - u2(2)
 
-!closeness = ( u1(2)- u2(2) ) / max( abs(u1(2)), abs(u2(2)) )
-!closeness = (u1(2) - u2(2)) / max( abs(u1(2)), abs(u2(2)) )
-closeness = abs(u1(2) - u2(2))/max(abs(u1(2)),abs(u2(2)))
-if (abs(closeness_mem) > 0.9D+04) then
-    closeness_mem = closeness
-    print *, "null closeness"
-end if
-!derivatives equality condition
-energyStepCoeff = (energy/energyMax) ** (0.1)
-if ( abs(closeness) .le. 1.0e-2 ) then
-    print *, "Found state l=",l," N=", sqrt(-Z**2/(2*energy))," roots=",roots," energy steps=",controller
-    if (roots == (Nr - l - 1)) then
+energyStepCoeff = abs(energy/energyMax)
+
+if (abs(dE*energyStepCoeff/energy) < error) then
+
+    print*, "Found state L=",l," roots=",roots, " energy=", energy," n=", sqrt(-Z**2/(2*energy))
+
+    if ( roots == rootsNeeded ) then
         exit
     else
-        print *,"Not the needed state, print something to continue or END to finish and write to file"
-        read *, rubbish
-        if (rubbish == "E") then
-            exit
-        end if
-        dE = sign(dEMax, real(-roots + (Nr - l - 1),8))
-        energy = energy + 50*dE
-        closeness_mem = 1.0D+04
+        dE = -sign(dEMax, real(roots - rootsNeeded,8))
+        energy = energy + 50.0D+00 * dE * energyStepCoeff
+        closeness = 10000.0D+00
         controller = 0
     end if
-elseif ((((closeness - closeness_mem)*dEMax/(abs(dE * energyStepCoeff))) .ge. 0.2D+00 ).and.( abs(closeness_mem) < 0.9D+03 )) then
-    dE = - dE/2
+
+elseif ( (closeness * closeness_mem) < 0.0D+00) then
+    dE = -dE/2
     print * , "reverse, E= ", energy, " now dE=", dE, " closeness=", closeness, "n=", sqrt(-Z**2/(2*energy))
-    noChanges = 0
-    !exit
+
 end if
 
-if (noChanges > 9) then
-    if (abs(dE)< abs(dEMax)) then
-        dE = dE * 2
-        noChanges = 0
-    end if
-end if
 
 write(19,200) energy, closeness, u1(2), u2(2), real(roots,8)
 
-energy = energy + dE*energyStepCoeff
+energy = energy + dE * energyStepCoeff
 if (energy >= 0) then
     print *, "Bad energy"
     exit
@@ -229,7 +215,7 @@ write(18,150) 'E=', energy, 'theoretical n=', sqrt(-z**2/(2*energy))
 write(18,*) '*********************************************************************'
 write(18,100) 'r', 'wave func(r)', 'derivative'
 
-do k=1,2*N+1
+do k=1,N1+N2+1
 write(18,200) coordinates(k), wave_func_vec(k,1), wave_func_vec(k,2)
 end do
 
